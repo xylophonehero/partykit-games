@@ -1,5 +1,6 @@
 import { produce } from "immer";
 import {
+  ActorRefFrom,
   SnapshotFrom,
   assign,
   createActor,
@@ -50,7 +51,7 @@ export type DefaultAction = { type: "UserEntered" } | { type: "UserExit" };
 const suitSymbols = ["♠", "♦", "♣", "♥"] as const;
 export const getSuitSymbol = (suit: Suit) => suitSymbols[suit];
 export type Suit = number;
-export type Card = { suit: Suit; rank: string };
+export type CardInfo = { suit: Suit; rank: string };
 const getCardRank = (rank: number) => {
   switch (rank) {
     case 1:
@@ -66,12 +67,20 @@ const getCardRank = (rank: number) => {
   }
 };
 
-export function getCardInfo(cardId: number): Card {
-  const suit = cardId % 4;
-  const rank = getCardRank(Math.floor(cardId / 4) + 1);
+export function getCardInfo(cardId: number): CardInfo {
+  const suit = Math.floor(cardId / 13);
+  const rank = getCardRank((cardId % 13) + 1);
   return { suit, rank };
 }
 
+export const getCardScore = (cardId: number) => {
+  const { suit, rank } = getCardInfo(cardId);
+  if (suit === 3) return 1;
+  if (suit === 0 && rank === "Q") return 13;
+  return 0;
+};
+
+export type Card = number;
 export type Cards = number[];
 export type Hand = Cards;
 export type Deck = Cards;
@@ -95,6 +104,7 @@ export type Player = {
   id: PlayerId;
   name: string;
   hand: Hand;
+  playArea: Hand;
   score: number;
 };
 
@@ -111,6 +121,7 @@ interface GameInfo {
   currentPlayer: PlayerId;
   winner: Player | null;
   round: number;
+  // TODO: Use a play area
   table: Table;
   discard: Deck;
   playerOrder: PlayerId[];
@@ -156,6 +167,9 @@ export const gameMachine = setup({
     requestMachine: requestMachine,
   },
   actions: {
+    resetDeck: assign({
+      deck: createDeck(),
+    }),
     pass: assign(
       (
         { context },
@@ -182,12 +196,13 @@ export const gameMachine = setup({
       ) => {
         return {
           ...context,
-          table: context.table.concat(cardId),
+          // table: context.table.concat(cardId),
           players: {
             ...context.players,
             [playerId]: {
               ...context.players[playerId],
               hand: context.players[playerId].hand.filter((x) => x !== cardId),
+              playArea: context.players[playerId].playArea.concat(cardId),
             },
           },
         };
@@ -198,13 +213,23 @@ export const gameMachine = setup({
         newGameState.deck.sort(() => Math.random() - 0.5);
       }),
     ),
-    deal: assign(({ context }) => {
-      return produce(context, (newGameState) => {
-        newGameState.deck.forEach((card, index) => {
-          const offset = index % Object.keys(context.players).length;
-          Object.values(newGameState.players)[offset].hand.push(card);
-        });
-        newGameState.deck = [];
+    deal: enqueueActions(({ context, enqueue }) => {
+      const newPlayerHands = Object.values(context.players).map((player) => [
+        ...player.hand,
+      ]);
+      context.deck.forEach((card, index) => {
+        const offset = index % Object.keys(context.players).length;
+        newPlayerHands[offset].push(card);
+      });
+      newPlayerHands.forEach((hand) => hand.sort((a, b) => a - b));
+
+      enqueue.assign({
+        players: produce(context.players, (players) => {
+          Object.values(players).forEach((player, index) => {
+            player.hand = newPlayerHands[index];
+          });
+        }),
+        deck: [],
       });
     }),
   },
@@ -212,11 +237,21 @@ export const gameMachine = setup({
     isCurrentPlayer: ({ context }, { playerId }: { playerId: PlayerId }) => {
       return context.currentPlayer === playerId;
     },
+    cardsOnTable: ({ context }, { count }: { count: number }) => {
+      return context.table.length === count;
+    },
+    cardInAllPlayersPlayArea: ({ context }) =>
+      Object.values(context.players).every(
+        (player) => player.playArea.length > 0,
+      ),
+    isRound: ({ context }, { roundNumber }: { roundNumber: number }) => {
+      return context.round === roundNumber;
+    },
   },
 }).createMachine({
   id: "game",
   context: ({ input }) => ({
-    deck: createDeck(),
+    deck: [],
     activeRequests: [],
     players: Object.fromEntries(
       input.players.map((player) => [
@@ -224,6 +259,7 @@ export const gameMachine = setup({
         {
           name: player.name,
           hand: [],
+          playArea: [],
           score: 0,
           id: player.id,
         },
@@ -247,12 +283,18 @@ export const gameMachine = setup({
       ),
     },
   },
-  entry: ["shuffle", "deal"],
+  entry: ["resetDeck", "shuffle", "deal"],
   initial: "playing",
   states: {
     passing: {
+      id: "passing",
+      // TODO: implement passing phase
+      after: {
+        1000: {
+          target: "playing",
+        },
+      },
       on: {
-        // TODO: Implement
         pass: {
           actions: [
             {
@@ -324,13 +366,95 @@ export const gameMachine = setup({
                     };
                   },
                 },
-                assign({
-                  currentPlayer: ({ context }) =>
-                    nextPlayer(context.playerOrder, context.currentPlayer),
-                }),
               ],
+              target: "_nextPlayer",
+            },
+          },
+        },
+        _nextPlayer: {
+          always: [
+            {
+              guard: {
+                type: "cardInAllPlayersPlayArea",
+              },
+              actions: enqueueActions(({ enqueue, context }) => {
+                const winningPlayer = Object.values(context.players).reduce(
+                  (acc, curr) => {
+                    if (curr.playArea[0] > context.players[acc].playArea[0]) {
+                      return curr.id;
+                    }
+                    return acc;
+                  },
+                  Object.keys(context.players)[0],
+                );
+                const totalScore = Object.values(context.players).reduce(
+                  (acc, curr) => {
+                    acc += getCardScore(curr.playArea[0]);
+                    return acc;
+                  },
+                  0,
+                );
+                enqueue.assign({
+                  players: ({ context }) => {
+                    return produce(context.players, (players) => {
+                      players[winningPlayer].score += totalScore;
+                    });
+                  },
+                });
+                enqueue.assign({
+                  currentPlayer: winningPlayer,
+                });
+              }),
+              // Add points and determine the next player
+              target: "endTurn",
+            },
+            {
+              actions: assign({
+                currentPlayer: ({ context }) =>
+                  nextPlayer(context.playerOrder, context.currentPlayer),
+              }),
               target: "requesting",
             },
+          ],
+        },
+        endTurn: {
+          after: {
+            1000: [
+              {
+                guard: {
+                  type: "isRound",
+                  params: { roundNumber: 13 },
+                },
+                actions: [
+                  "resetDeck",
+                  "shuffle",
+                  "deal",
+                  assign({
+                    round: 1,
+                  }),
+                ],
+                target: "#passing",
+              },
+              {
+                actions: [
+                  enqueueActions(({ enqueue }) => {
+                    // Reset play area
+                    enqueue.assign({
+                      players: ({ context }) =>
+                        produce(context.players, (players) => {
+                          Object.values(players).forEach((player) => {
+                            player.playArea = [];
+                          });
+                        }),
+                    });
+                  }),
+                  assign({
+                    round: ({ context }) => context.round + 1,
+                  }),
+                ],
+                target: "requesting",
+              },
+            ],
           },
         },
       },
@@ -338,41 +462,43 @@ export const gameMachine = setup({
   },
 });
 
+export type GameMachineActor = ActorRefFrom<typeof gameMachine>;
 export type GameMachineSnapshot = SnapshotFrom<typeof gameMachine>;
 
-export const gameActor = createActor(gameMachine, {
-  input: {
-    players: [
-      {
-        id: "Player:1",
-        name: "Player:1",
-      },
-      {
-        id: "Player:2",
-        name: "Player:2",
-      },
-      {
-        id: "Player:3",
-        name: "Player:3",
-      },
-      {
-        id: "Player:4",
-        name: "Player:4",
-      },
-    ],
-  },
-});
-gameActor.start();
+// export const gameActor = createActor(gameMachine, {
+//   input: {
+//     players: [
+//       {
+//         id: "Player:1",
+//         name: "Player:1",
+//       },
+//       {
+//         id: "Player:2",
+//         name: "Player:2",
+//       },
+//       {
+//         id: "Player:3",
+//         name: "Player:3",
+//       },
+//       {
+//         id: "Player:4",
+//         name: "Player:4",
+//       },
+//     ],
+//   },
+// });
+// gameActor.start();
 
 // This is how a fresh new game starts out, it's a function so you can make it dynamic!
 // In the case of the guesser game we start out with a random target
-export const initialGame = () =>
-  ({
-    users: [],
-    gameInfo: gameActor.getPersistedSnapshot() as GameMachineSnapshot,
-    log: addLog("Game Created!", []),
-  }) as GameState;
+// export const initialGame = () =>
+//   ({
+//     users: [],
+//     gameInfo: gameActor.getPersistedSnapshot() as GameMachineSnapshot,
+//     log: addLog("Game Created!", []),
+//   }) as GameState;
 
+// TODO: Move this over to a single machine
 export const gameUpdater = (
   action: ServerAction,
   state: GameState,
@@ -398,14 +524,13 @@ export const gameUpdater = (
         log: addLog(`user ${action.user.id} left 😢`, state.log),
       };
 
-    // TODO: Only allow request events from the player
-
     default:
-      gameActor.send(action);
-      return {
-        ...state,
-        gameInfo: gameActor.getPersistedSnapshot() as GameMachineSnapshot,
-        log: addLog(`action ${JSON.stringify(action)}`, state.log),
-      };
+      return state;
+    // gameActor.send(action);
+    // return {
+    //   ...state,
+    //   gameInfo: gameActor.getPersistedSnapshot() as GameMachineSnapshot,
+    //   log: addLog(`action ${JSON.stringify(action)}`, state.log),
+    // };
   }
 };

@@ -9,6 +9,7 @@ export const useGameRoom = (username: string, roomId: string) => {
     host: process.env.NEXT_PUBLIC_SERVER_URL || "127.0.0.1:1999",
     room: roomId,
     id: username,
+    // TODO: Could customise this to handle requests a bit differently
     onMessage(event: MessageEvent<string>) {
       setGameState(JSON.parse(event.data));
     },

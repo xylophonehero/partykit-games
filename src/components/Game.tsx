@@ -59,7 +59,13 @@ const PlayerHand = ({
     if (!currentRequestId) return;
     dispatch({ type: "request", value: cardId, requestId: currentRequestId });
   };
-  return <Hand hand={player.hand} playCard={playCard} direction={direction} />;
+  return (
+    <div className="flex flex-col">
+      <div>{player.name}</div>
+      <div className="text-sm">Score: {player.score}</div>
+      <Hand hand={player.hand} playCard={playCard} direction={direction} />
+    </div>
+  );
 };
 
 const GameRoomContext = createContext<{
@@ -83,9 +89,6 @@ const Game = ({ username, roomId }: GameProps) => {
   const gameRoom = useGameRoom(username, roomId);
   const { gameState, dispatch } = gameRoom;
 
-  // Local state to use for the UI
-  const [guess, setGuess] = useState<number>(0);
-
   // Indicated that the game is loading
   if (gameState === null) {
     return (
@@ -100,7 +103,7 @@ const Game = ({ username, roomId }: GameProps) => {
 
   const { gameInfo: gameSnapshot } = gameState;
   const {
-    context: { currentPlayer, playerOrder, table, players },
+    context: { currentPlayer, playerOrder, round, players },
     children,
   } = gameSnapshot;
 
@@ -173,11 +176,37 @@ const Game = ({ username, roomId }: GameProps) => {
             direction="vertical"
           />
         </div>
-        <div className="grid grid-cols-4 area-[table] place-items-center">
-          {table.map((cardId) => (
-            <Card key={cardId} cardId={cardId} />
-          ))}
+        <div className="grid area-[table] grid-areas-[._north_.,_west_._east_,._south_.] place-items-center">
+          <div className="area-[north]">
+            <Card
+              cardId={
+                players[nextPlayer(playerOrder, localPlayerId, 2)].playArea[0]
+              }
+            />
+          </div>
+          <div className="area-[west]">
+            <Card
+              cardId={
+                players[nextPlayer(playerOrder, localPlayerId, 1)].playArea[0]
+              }
+            />
+          </div>
+          <div className="area-[east]">
+            <Card
+              cardId={
+                players[nextPlayer(playerOrder, localPlayerId, 3)].playArea[0]
+              }
+            />
+          </div>
+          <div className="area-[south]">
+            <Card cardId={players[localPlayerId].playArea[0]} />
+          </div>
         </div>
+        {/* <div className="grid grid-cols-4 area-[table] place-items-center"> */}
+        {/*   {table.map((cardId) => ( */}
+        {/*     <Card key={cardId} cardId={cardId} /> */}
+        {/*   ))} */}
+        {/* </div> */}
         <div className="area-[player-east]">
           <PlayerHand
             currentRequestId={
@@ -203,6 +232,7 @@ const Game = ({ username, roomId }: GameProps) => {
         </div>
       </div>
       <div>{players[currentPlayer].name}</div>
+      <div>Round:{round}</div>
       {/* <pre>{JSON.stringify(gameState, null, 2)}</pre> */}
     </GameRoomContext.Provider>
   );

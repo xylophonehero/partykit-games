@@ -23,6 +23,8 @@ const CardValue = ({ cardId }: { cardId: number }) => {
 };
 
 const Card = ({ cardId }: { cardId: number }) => {
+  if (cardId === null) return null;
+  if (cardId === undefined) return null;
   const { suit, rank } = getCardInfo(cardId);
   return (
     <div className="flex bg-white h-24 w-16 border rounded px-2 flex-col justify-between">
