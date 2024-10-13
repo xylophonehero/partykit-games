@@ -1,5 +1,5 @@
 import React from "react";
-import { getCardInfo, getSuitColorId, getSuitSymbol } from "../../game/logic";
+import { getCardInfo, getSuitSymbol } from "../../game/logic";
 import { cva, cx } from "class-variance-authority";
 
 const suitStyles = cva("", {
@@ -25,7 +25,7 @@ const CardValue = ({ cardId }: { cardId: number }) => {
 const Card = ({ cardId }: { cardId: number }) => {
   if (cardId === null) return null;
   if (cardId === undefined) return null;
-  const { suit, rank } = getCardInfo(cardId);
+  const { suit } = getCardInfo(cardId);
   return (
     <div className="flex bg-white h-24 w-16 border rounded px-2 flex-col justify-between">
       <div className="flex text-sm">

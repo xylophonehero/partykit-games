@@ -8,15 +8,19 @@ interface RequestMachineInput {
   // Could refer to a zone or a resource...
   // Maybe need custom validation function?
   tag: string;
+  // TODO: Validation is not JSON serializable
+  // So we need to pass the list of valid values
+  validation: (value: any) => boolean;
 }
 
 export interface RequestMachineContext extends RequestMachineInput {
-  value: unknown | null;
+  // TODO: Make this generic
+  value: any | null;
 }
 
 type RequestMachineEvents = {
   type: "request";
-  value: unknown;
+  value: any;
   // Validating the reqest comes from the player
   // Injected by partykit context
   user: { id: PlayerId };
@@ -27,11 +31,14 @@ export const requestMachine = setup({
     context: {} as RequestMachineContext,
     events: {} as RequestMachineEvents,
     input: {} as RequestMachineInput,
-    output: {} as { value: unknown },
+    output: {} as { value: any },
   },
   guards: {
     isFromPlayer: ({ context }, { playerId }: { playerId: PlayerId }) => {
       return context.playerId === playerId;
+    },
+    isValid: ({ context }, { value }: { value: any }) => {
+      return context.validation(value);
     },
   },
 }).createMachine({
@@ -45,6 +52,10 @@ export const requestMachine = setup({
     requesting: {
       on: {
         request: {
+          guard: {
+            type: 'isValid',
+            params: ({ event }) => ({ value: event.value }),
+          },
           // TODO:
           // guard: {
           //   type: "isFromPlayer",

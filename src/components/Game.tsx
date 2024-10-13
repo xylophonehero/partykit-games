@@ -24,17 +24,25 @@ const Hand = ({
   hand,
   direction,
   playCard,
+  isValid,
 }: {
   hand: number[];
   direction: "horizontal" | "vertical";
   playCard: (cardId: number) => void;
+  isValid?: ((cardId: number) => boolean) | null;
 }) => {
   return (
     <div className={handStyles({ direction })}>
       {hand.map((cardId) => (
         <button
           key={cardId}
-          className="relative"
+          className={cva("relative", {
+            variants: {
+              isValid: {
+                true: "",
+              },
+            },
+          })({ isValid: isValid ? isValid(cardId) : false })}
           type="button"
           onClick={() => playCard(cardId)}
         >
@@ -49,10 +57,12 @@ const PlayerHand = ({
   player,
   direction,
   currentRequestId,
+  isValid,
 }: {
   player: Player;
   direction: "horizontal" | "vertical";
   currentRequestId?: string | null;
+  isValid?: (cardId: number) => boolean;
 }) => {
   const { dispatch } = useGameRoomContext();
   const playCard = (cardId: number) => {
@@ -63,7 +73,12 @@ const PlayerHand = ({
     <div className="flex flex-col">
       <div>{player.name}</div>
       <div className="text-sm">Score: {player.score}</div>
-      <Hand hand={player.hand} playCard={playCard} direction={direction} />
+      <Hand
+        hand={player.hand}
+        playCard={playCard}
+        isValid={currentRequestId !== null ? isValid : null}
+        direction={direction}
+      />
     </div>
   );
 };
@@ -118,6 +133,7 @@ const Game = ({ username, roomId }: GameProps) => {
     | { snapshot: { context: RequestMachineContext }; systemId: string }
     | undefined;
 
+  console.log(requestActor?.snapshot.context);
   return (
     <GameRoomContext.Provider value={gameRoom}>
       <h1 className="text-2xl border-b border-yellow-400 text-center relative">
@@ -151,9 +167,10 @@ const Game = ({ username, roomId }: GameProps) => {
         </div>
       </section>
 
-      <div className="grid place-items-center grid-areas-[._player-north_.,player-west_table_player-east,._player-south_.]">
+      <div className="h-[820px] w-[820px] grid-cols-[auto_1fr_auto] grid-rows-[auto_1fr_auto] grid place-items-center grid-areas-[._player-north_.,player-west_table_player-east,._player-south_.]">
         <div className="area-[player-north]">
           <PlayerHand
+            isValid={requestActor?.snapshot.context.validation}
             currentRequestId={
               requestActor?.snapshot.context.playerId ===
               nextPlayer(playerOrder, localPlayerId, 2)
@@ -166,6 +183,7 @@ const Game = ({ username, roomId }: GameProps) => {
         </div>
         <div className="area-[player-west]">
           <PlayerHand
+            isValid={requestActor?.snapshot.context.validation}
             currentRequestId={
               requestActor?.snapshot.context.playerId ===
               nextPlayer(playerOrder, localPlayerId, 1)
@@ -202,13 +220,9 @@ const Game = ({ username, roomId }: GameProps) => {
             <Card cardId={players[localPlayerId].playArea[0]} />
           </div>
         </div>
-        {/* <div className="grid grid-cols-4 area-[table] place-items-center"> */}
-        {/*   {table.map((cardId) => ( */}
-        {/*     <Card key={cardId} cardId={cardId} /> */}
-        {/*   ))} */}
-        {/* </div> */}
         <div className="area-[player-east]">
           <PlayerHand
+            isValid={requestActor?.snapshot.context.validation}
             currentRequestId={
               requestActor?.snapshot.context.playerId ===
               nextPlayer(playerOrder, localPlayerId, 3)
@@ -221,6 +235,7 @@ const Game = ({ username, roomId }: GameProps) => {
         </div>
         <div className="area-[player-south]">
           <PlayerHand
+            isValid={requestActor?.snapshot.context.validation}
             currentRequestId={
               requestActor?.snapshot.context.playerId === localPlayerId
                 ? requestActor.systemId
@@ -231,7 +246,7 @@ const Game = ({ username, roomId }: GameProps) => {
           />
         </div>
       </div>
-      <div>{players[currentPlayer].name}</div>
+      <div>Current:{players[currentPlayer].name}</div>
       <div>Round:{round}</div>
       {/* <pre>{JSON.stringify(gameState, null, 2)}</pre> */}
     </GameRoomContext.Provider>
