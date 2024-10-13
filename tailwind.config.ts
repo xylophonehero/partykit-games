@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import { gridAreas } from "tailwindcss-grid-areas";
 
 const config: Config = {
   content: [
@@ -31,6 +32,6 @@ const config: Config = {
       },
     },
   },
-  plugins: [],
+  plugins: [gridAreas()],
 };
 export default config;

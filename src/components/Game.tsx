@@ -1,14 +1,87 @@
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { useGameRoom } from "@/hooks/useGameRoom";
 import { stringToColor } from "@/utils";
+import Card from "./Card";
+import { cva } from "class-variance-authority";
+import { Action, GameState, Player, nextPlayer } from "../../game/logic";
+import { RequestMachineContext } from "../../game/requestMachine";
+
+const handStyles = cva("flex", {
+  variants: {
+    direction: {
+      horizontal: "flex-row -space-x-8",
+      vertical: "flex-col items-center -space-y-16",
+    },
+  },
+});
 
 interface GameProps {
   username: string;
   roomId: string;
 }
 
+const Hand = ({
+  hand,
+  direction,
+  playCard,
+}: {
+  hand: number[];
+  direction: "horizontal" | "vertical";
+  playCard: (cardId: number) => void;
+}) => {
+  return (
+    <div className={handStyles({ direction })}>
+      {hand.map((cardId) => (
+        <button
+          key={cardId}
+          className="relative"
+          type="button"
+          onClick={() => playCard(cardId)}
+        >
+          <Card cardId={cardId} />
+        </button>
+      ))}
+    </div>
+  );
+};
+
+const PlayerHand = ({
+  player,
+  direction,
+  currentRequestId,
+}: {
+  player: Player;
+  direction: "horizontal" | "vertical";
+  currentRequestId?: string | null;
+}) => {
+  const { dispatch } = useGameRoomContext();
+  const playCard = (cardId: number) => {
+    if (!currentRequestId) return;
+    dispatch({ type: "request", value: cardId, requestId: currentRequestId });
+  };
+  return <Hand hand={player.hand} playCard={playCard} direction={direction} />;
+};
+
+const GameRoomContext = createContext<{
+  gameState: GameState | null;
+  dispatch: (action: Action) => void;
+} | null>(
+  {} as { gameState: GameState | null; dispatch: (action: Action) => void },
+);
+
+const useGameRoomContext = () => {
+  const ctx = useContext(GameRoomContext);
+  if (ctx === null) {
+    throw new Error(
+      "useGameRoomContext must be used within a GameRoomContext.Provider",
+    );
+  }
+  return ctx;
+};
+
 const Game = ({ username, roomId }: GameProps) => {
-  const { gameState, dispatch } = useGameRoom(username, roomId);
+  const gameRoom = useGameRoom(username, roomId);
+  const { gameState, dispatch } = gameRoom;
 
   // Local state to use for the UI
   const [guess, setGuess] = useState<number>(0);
@@ -25,46 +98,32 @@ const Game = ({ username, roomId }: GameProps) => {
     );
   }
 
-  const handleGuess = (event: React.SyntheticEvent) => {
-    event.preventDefault();
-    // Dispatch allows you to send an action!
-    // Modify /game/logic.ts to change what actions you can send
-    dispatch({ type: "guess", guess: guess });
-  };
+  const { gameInfo: gameSnapshot } = gameState;
+  const {
+    context: { currentPlayer, playerOrder, table, players },
+    children,
+  } = gameSnapshot;
+
+  // TODO: Instanciate game with userId instead of username?
+  const localPlayerId = username;
+
+  const requestActor = Object.values(children).find(
+    () => true,
+    // TODO: Uncomment this when we have separate browsers
+    // (actor) => actor.snapshot.context.playerId === localPlayerId,
+  ) as
+    | { snapshot: { context: RequestMachineContext }; systemId: string }
+    | undefined;
 
   return (
-    <>
+    <GameRoomContext.Provider value={gameRoom}>
       <h1 className="text-2xl border-b border-yellow-400 text-center relative">
-        🎲 Guess the number!
+        ❤️ Hearts!
       </h1>
+      <div className="border-t border-yellow-400 py-2" />
       <section>
-        <form
-          className="flex flex-col gap-4 py-6 items-center"
-          onSubmit={handleGuess}
-        >
-          <label
-            htmlFor="guess"
-            className="text-7xl font-bold text-stone-50 bg-black rounded p-2 text-"
-          >
-            {guess}
-          </label>
-          <input
-            type="range"
-            name="guess"
-            id="guess"
-            className="opacity-70 hover:opacity-100 accent-yellow-400"
-            onChange={(e) => setGuess(Number(e.currentTarget.value))}
-            value={guess}
-          />
-          <button className="rounded border p-5 bg-yellow-400 group text-black shadow hover:animate-wiggle">
-            Guess!
-          </button>
-        </form>
-
-        <div className="border-t border-yellow-400 py-2" />
-
         <div className=" bg-yellow-100 flex flex-col p-4 rounded text-sm">
-          {gameState.log.map((logEntry, i) => (
+          {gameState.log.map((logEntry) => (
             <p key={logEntry.dt} className="animate-appear text-black">
               {logEntry.message}
             </p>
@@ -88,7 +147,64 @@ const Game = ({ username, roomId }: GameProps) => {
           })}
         </div>
       </section>
-    </>
+
+      <div className="grid place-items-center grid-areas-[._player-north_.,player-west_table_player-east,._player-south_.]">
+        <div className="area-[player-north]">
+          <PlayerHand
+            currentRequestId={
+              requestActor?.snapshot.context.playerId ===
+              nextPlayer(playerOrder, localPlayerId, 2)
+                ? requestActor.systemId
+                : null
+            }
+            player={players[nextPlayer(playerOrder, localPlayerId, 2)]}
+            direction="horizontal"
+          />
+        </div>
+        <div className="area-[player-west]">
+          <PlayerHand
+            currentRequestId={
+              requestActor?.snapshot.context.playerId ===
+              nextPlayer(playerOrder, localPlayerId, 1)
+                ? requestActor.systemId
+                : null
+            }
+            player={players[nextPlayer(playerOrder, localPlayerId, 1)]}
+            direction="vertical"
+          />
+        </div>
+        <div className="grid grid-cols-4 area-[table] place-items-center">
+          {table.map((cardId) => (
+            <Card key={cardId} cardId={cardId} />
+          ))}
+        </div>
+        <div className="area-[player-east]">
+          <PlayerHand
+            currentRequestId={
+              requestActor?.snapshot.context.playerId ===
+              nextPlayer(playerOrder, localPlayerId, 3)
+                ? requestActor.systemId
+                : null
+            }
+            player={players[nextPlayer(playerOrder, localPlayerId, 3)]}
+            direction="vertical"
+          />
+        </div>
+        <div className="area-[player-south]">
+          <PlayerHand
+            currentRequestId={
+              requestActor?.snapshot.context.playerId === localPlayerId
+                ? requestActor.systemId
+                : null
+            }
+            player={players[localPlayerId]}
+            direction="horizontal"
+          />
+        </div>
+      </div>
+      <div>{players[currentPlayer].name}</div>
+      {/* <pre>{JSON.stringify(gameState, null, 2)}</pre> */}
+    </GameRoomContext.Provider>
   );
 };
 

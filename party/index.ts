@@ -1,6 +1,11 @@
 import type * as Party from "partykit/server";
 
-import { gameUpdater, initialGame, Action, ServerAction } from "../game/logic";
+import {
+  gameUpdater,
+  initialGame,
+  Action,
+  ServerAction,
+} from "../game/logic";
 import { GameState } from "../game/logic";
 
 interface ServerMessage {
@@ -16,6 +21,7 @@ export default class Server implements Party.Server {
     console.log("Room target", this.gameState.target);
     // party.storage.put;
   }
+
   onConnect(connection: Party.Connection, ctx: Party.ConnectionContext) {
     // A websocket just connected!
 
@@ -23,27 +29,33 @@ export default class Server implements Party.Server {
     // conn.send();
     this.gameState = gameUpdater(
       { type: "UserEntered", user: { id: connection.id } },
-      this.gameState
+      this.gameState,
     );
     this.party.broadcast(JSON.stringify(this.gameState));
   }
+
   onClose(connection: Party.Connection) {
     this.gameState = gameUpdater(
       {
         type: "UserExit",
         user: { id: connection.id },
       },
-      this.gameState
+      this.gameState,
     );
     this.party.broadcast(JSON.stringify(this.gameState));
   }
+
   onMessage(message: string, sender: Party.Connection) {
     const action: ServerAction = {
       ...(JSON.parse(message) as Action),
+      // Attach the user id to the action
       user: { id: sender.id },
     };
-    console.log(`Received action ${action.type} from user ${sender.id}`);
+    console.log(
+      `Received action ${JSON.stringify(action)} from user ${sender.id}`,
+    );
     this.gameState = gameUpdater(action, this.gameState);
+    // TODO: filter out the reduced state for each player
     this.party.broadcast(JSON.stringify(this.gameState));
   }
 }
