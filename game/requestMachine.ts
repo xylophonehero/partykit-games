@@ -8,6 +8,7 @@ interface RequestMachineInput {
   // Could refer to a zone or a resource...
   // Maybe need custom validation function?
   tag: string;
+  count?: number;
   // TODO: Validation is not JSON serializable
   // So we need to pass the list of valid values
   validation: (value: any) => boolean;
@@ -15,7 +16,7 @@ interface RequestMachineInput {
 
 export interface RequestMachineContext extends RequestMachineInput {
   // TODO: Make this generic
-  value: any | null;
+  value: any[];
 }
 
 type RequestMachineEvents = {
@@ -37,14 +38,18 @@ export const requestMachine = setup({
     isFromPlayer: ({ context }, { playerId }: { playerId: PlayerId }) => {
       return context.playerId === playerId;
     },
-    isValid: ({ context }, { value }: { value: any }) => {
-      return context.validation(value);
+    isValid: ({ context }, { value }: { value: any[] }) => {
+      return (
+        context.count === value.length &&
+        value.every((v) => context.validation(v))
+      );
     },
   },
 }).createMachine({
   context: ({ input }) => ({
     ...input,
-    value: null,
+    value: [],
+    count: input.count ?? 1,
   }),
   id: "requestMachine",
   initial: "requesting",
@@ -53,8 +58,8 @@ export const requestMachine = setup({
       on: {
         request: {
           guard: {
-            type: 'isValid',
-            params: ({ event }) => ({ value: event.value }),
+            type: "isValid",
+            params: ({ event }) => ({ value: [event.value].flat() }),
           },
           // TODO:
           // guard: {
@@ -63,7 +68,7 @@ export const requestMachine = setup({
           // },
           actions: [
             assign({
-              value: ({ event }) => event.value,
+              value: ({ event }) => [event.value].flat(),
             }),
             sendParent(({ context }) => ({ type: "play", ...context })),
           ],

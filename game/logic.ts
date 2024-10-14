@@ -4,6 +4,7 @@ import {
   SnapshotFrom,
   assign,
   enqueueActions,
+  fromPromise,
   raise,
   sendTo,
   setup,
@@ -179,14 +180,16 @@ export const gameMachine = setup({
         { context },
         { playerId, cardId }: { playerId: PlayerId; cardId: number },
       ) => {
+        const newHand = context.players[playerId].hand.filter(
+          (x) => x !== cardId,
+        );
         return {
           ...context,
-          // table: context.table.concat(cardId),
           players: {
             ...context.players,
             [playerId]: {
               ...context.players[playerId],
-              hand: context.players[playerId].hand.filter((x) => x !== cardId),
+              hand: newHand,
               playArea: context.players[playerId].playArea.concat(cardId),
             },
           },
@@ -272,12 +275,38 @@ export const gameMachine = setup({
   states: {
     passing: {
       id: "passing",
-      // TODO: implement passing phase
-      after: {
-        1000: {
-          target: "playing",
-        },
+      initial: "requesting",
+      onDone: {
+        target: "playing",
       },
+      states: {
+        requesting: {
+          entry: enqueueActions(({ enqueue, context }) => {
+            // HACK: Can't use invoke as the systemId is not dynamic
+            Object.values(context.players).forEach((player) => {
+              const requestId = getRequestId();
+              enqueue.spawnChild("requestMachine", {
+                id: `request.${requestId}`,
+                input: {
+                  playerId: player.id,
+                  tag: "hand",
+                  count: 3,
+                  validation: () => true,
+                },
+                systemId: requestId,
+              });
+            });
+          }),
+        },
+        evaluating: {},
+        final: { type: "final" },
+      },
+      // TODO: implement passing phase
+      // after: {
+      //   1000: {
+      //     target: "playing",
+      //   },
+      // },
     },
     playing: {
       initial: "requesting",
@@ -332,45 +361,21 @@ export const gameMachine = setup({
                   const requestId = event.type.split(".")[4];
                   enqueue.stopChild(`request.${requestId}`);
                 }),
-                raise(({ event, context }) => ({
-                  type: "play",
-                  cardId: event.output.value as number,
-                  playerId: context.currentPlayer,
-                  // TODO: This isn't needed
-                  user: { id: context.currentPlayer },
-                })),
-              ],
-              target: "resolvingRequest",
-            },
-          },
-        },
-        resolvingRequest: {
-          on: {
-            play: {
-              // guard: {
-              //   type: "isCurrentPlayer",
-              //   params: ({ event }) => {
-              //     return {
-              //       playerId: event.playerId,
-              //     };
-              //   },
-              // },
-              actions: [
                 {
                   type: "play",
-                  params: ({ event }) => {
+                  params: ({ event, context }) => {
                     return {
-                      cardId: event.cardId,
-                      playerId: event.playerId,
+                      cardId: event.output.value[0] as number,
+                      playerId: context.currentPlayer,
                     };
                   },
                 },
               ],
-              target: "_nextPlayer",
+              target: "evaluating",
             },
           },
         },
-        _nextPlayer: {
+        evaluating: {
           always: [
             {
               guard: {

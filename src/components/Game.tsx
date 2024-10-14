@@ -133,7 +133,6 @@ const Game = ({ username, roomId }: GameProps) => {
     | { snapshot: { context: RequestMachineContext }; systemId: string }
     | undefined;
 
-  console.log(requestActor?.snapshot.context);
   return (
     <GameRoomContext.Provider value={gameRoom}>
       <h1 className="text-2xl border-b border-yellow-400 text-center relative">
@@ -194,7 +193,7 @@ const Game = ({ username, roomId }: GameProps) => {
             direction="vertical"
           />
         </div>
-        <div className="grid area-[table] grid-areas-[._north_.,_west_._east_,._south_.] place-items-center">
+        <div className="grid place-self-center grid-cols-3 grid-rows-3 area-[table] grid-areas-[._north_.,_west_._east_,._south_.] place-items-center">
           <div className="area-[north]">
             <Card
               cardId={
